@@ -1,0 +1,5 @@
+go.mod
+*.wasm
+wasi_*
+export_wasi_http_handler/wit_bindings.go
+wit_*

@@ -1,0 +1,14 @@
+[submodule "go"]
+	path = go
+	url = https://github.com/dicej/go
+	branch = component-model-async
+[submodule "wasmtime"]
+	path = wasmtime
+	url = https://github.com/bytecodealliance/wasmtime
+[submodule "wasm-tools"]
+	path = wasm-tools
+	url = https://github.com/bytecodealliance/wasm-tools
+[submodule "wit-bindgen"]
+	path = wit-bindgen
+	url = https://github.com/dicej/wit-bindgen
+	branch = go
