@@ -1,33 +1,207 @@
 package export_wasi_http_handler
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"log"
+	"net/url"
+	"reflect"
+	"wit_component/wasi_http_handler"
 	. "wit_component/wasi_http_types"
 	. "wit_component/wit_types"
 )
 
 // Handle the specified `Request`, returning a `Response`
 func Handle(request *Request) Result[*Response, ErrorCode] {
-	tx, rx := MakeStreamU8()
+	method := request.GetMethod().Tag()
+	path := request.GetPathWithQuery().SomeOr("/")
 
-	go func() {
-		defer tx.Drop()
-		tx.Write([]uint8("hello, world!"))
-	}()
+	if method == MethodGet && path == "/hello" {
+		// Say hello!
 
-	response, send := ResponseNew(
-		FieldsFromList([]Tuple2[string, []uint8]{
-			Tuple2[string, []uint8]{"content-type", []uint8("text/plain")},
-		}).Ok(),
-		Some(rx),
+		tx, rx := MakeStreamU8()
+
+		go func() {
+			defer tx.Drop()
+			tx.WriteAll([]uint8("hello, world!"))
+		}()
+
+		response, send := ResponseNew(
+			FieldsFromList([]Tuple2[string, []uint8]{
+				Tuple2[string, []uint8]{"content-type", []uint8("text/plain")},
+			}).Ok(),
+			Some(rx),
+			trailersFuture(),
+		)
+		send.Drop()
+
+		return Ok[*Response, ErrorCode](response)
+
+	} else if method == MethodGet && path == "/hash-all" {
+		// Collect one or more "url" headers, download their contents
+		// concurrently, compute their SHA-256 hashes incrementally
+		// (i.e. without buffering the response bodies), and stream the
+		// results back to the client as they become available.
+
+		urls := make([]string, 0)
+		for _, pair := range request.GetHeaders().CopyAll() {
+			if pair.F0 == "url" {
+				urls = append(urls, string(pair.F1))
+			}
+		}
+
+		tx, rx := MakeStreamU8()
+
+		go func() {
+			defer tx.Drop()
+
+			cases := make([]reflect.SelectCase, 0, len(urls))
+			for _, url := range urls {
+				channel := make(chan Tuple2[string, string])
+				go func() {
+
+					channel <- Tuple2[string, string]{url, getSha256(url)}
+				}()
+				cases = append(cases, reflect.SelectCase{
+					reflect.SelectRecv,
+					reflect.ValueOf(channel),
+					reflect.Value{},
+				})
+			}
+
+			for i := 0; i < len(urls); i++ {
+				_, value, _ := reflect.Select(cases)
+				tx.WriteAll([]uint8(fmt.Sprintf(
+					"%v: %v\n",
+					value.Field(0).String(),
+					value.Field(1).String(),
+				)))
+			}
+		}()
+
+		response, send := ResponseNew(
+			FieldsFromList([]Tuple2[string, []uint8]{
+				Tuple2[string, []uint8]{"content-type", []uint8("text/plain")},
+			}).Ok(),
+			Some(rx),
+			trailersFuture(),
+		)
+		send.Drop()
+
+		return Ok[*Response, ErrorCode](response)
+
+	} else if method == MethodPost && path == "/echo" {
+		// Echo the request body back to the client without buffering.
+
+		requestHeaders := request.GetHeaders().CopyAll()
+
+		rx, trailers := RequestConsumeBody(request, unitFuture())
+
+		responseHeaders := make([]Tuple2[string, []uint8], 0, 1)
+		for _, pair := range requestHeaders {
+			if pair.F0 == "content-type" {
+				responseHeaders = append(responseHeaders, pair)
+			}
+		}
+
+		response, send := ResponseNew(
+			FieldsFromList(responseHeaders).Ok(),
+			Some(rx),
+			trailers,
+		)
+		send.Drop()
+
+		return Ok[*Response, ErrorCode](response)
+
+	} else {
+		// Bad request
+
+		response, send := ResponseNew(
+			MakeFields(),
+			None[*StreamReader[uint8]](),
+			trailersFuture(),
+		)
+		send.Drop()
+		response.SetStatusCode(400).Ok()
+
+		return Ok[*Response, ErrorCode](response)
+
+	}
+}
+
+// Download the contents of the specified URL, computing the SHA-256
+// incrementally as the response body arrives.
+//
+// This returns a tuple of the original URL and either the hex-encoded hash or
+// an error message.
+func getSha256(urlString string) string {
+	parsed, err := url.Parse(urlString)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var scheme Scheme
+	switch parsed.Scheme {
+	case "http":
+		scheme = MakeSchemeHttp()
+	case "https":
+		scheme = MakeSchemeHttps()
+	default:
+		scheme = MakeSchemeOther(parsed.Scheme)
+	}
+
+	request, send := RequestNew(
+		MakeFields(),
+		None[*StreamReader[uint8]](),
 		trailersFuture(),
+		None[*RequestOptions](),
 	)
 	send.Drop()
+	request.SetScheme(Some(scheme)).Ok()
+	request.SetAuthority(Some(parsed.Host)).Ok()
+	request.SetPathWithQuery(Some(parsed.Path)).Ok()
 
-	return Ok[*Response, ErrorCode](response)
+	result := wasi_http_handler.Handle(request)
+	switch result.Tag() {
+	case ResultOk:
+		response := result.Ok()
+		status := response.GetStatusCode()
+		if status < 200 || status > 299 {
+			return fmt.Sprintf("unexpected status: %v", status)
+		}
+
+		rx, trailers := ResponseConsumeBody(response, unitFuture())
+		trailers.Drop()
+		defer rx.Drop()
+
+		buffer := make([]uint8, 16*1024)
+		hash := sha256.New()
+		for !rx.WriterDropped() {
+			count := rx.ReadInto(buffer)
+			writeCount, err := hash.Write(buffer[:count])
+			if err != nil || uint32(writeCount) != count {
+				panic("unreachable")
+			}
+		}
+		return hex.EncodeToString(hash.Sum([]uint8{}))
+
+	case ResultErr:
+		return "error sending request"
+
+	default:
+		panic("unreachable")
+	}
 }
 
 func trailersFuture() *FutureReader[Result[Option[*Fields], ErrorCode]] {
 	tx, rx := MakeFutureResultOptionFieldsErrorCode()
 	go tx.Write(Ok[Option[*Fields], ErrorCode](None[*Fields]()))
+	return rx
+}
+
+func unitFuture() *FutureReader[Result[Unit, ErrorCode]] {
+	tx, rx := MakeFutureResultUnitErrorCode()
+	go tx.Write(Ok[Unit, ErrorCode](Unit{}))
 	return rx
 }
