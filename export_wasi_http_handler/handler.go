@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"net/url"
 	"reflect"
 	"wit_component/wasi_http_handler"
@@ -138,7 +137,7 @@ func Handle(request *Request) Result[*Response, ErrorCode] {
 func getSha256(urlString string) string {
 	parsed, err := url.Parse(urlString)
 	if err != nil {
-		log.Fatal(err)
+		return err.Error()
 	}
 
 	var scheme Scheme
