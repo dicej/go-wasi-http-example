@@ -14,22 +14,20 @@ func Handle(request *Request) Result[*Response, ErrorCode] {
 		tx.Write([]uint8("hello, world!"))
 	}()
 
-	headers := FieldsFromList([]Tuple2[string, []uint8]{
-		Tuple2[string, []uint8]{"content-type", []uint8("text/plain")},
-	})
-
 	response, send := ResponseNew(
-		headers.Ok(),
-		MakeOptionSome(rx),
+		FieldsFromList([]Tuple2[string, []uint8]{
+			Tuple2[string, []uint8]{"content-type", []uint8("text/plain")},
+		}).Ok(),
+		Some(rx),
 		trailersFuture(),
 	)
 	send.Drop()
 
-	return MakeResultOk[*Response, ErrorCode](response)
+	return Ok[*Response, ErrorCode](response)
 }
 
 func trailersFuture() *FutureReader[Result[Option[*Fields], ErrorCode]] {
-	tx, rx := MakeFutureResultOptionWasiHttpTypesFieldsWasiHttpTypesErrorCode()
-	go tx.Write(MakeResultOk[Option[*Fields], ErrorCode](MakeOptionNone[*Fields]()))
+	tx, rx := MakeFutureResultOptionFieldsErrorCode()
+	go tx.Write(Ok[Option[*Fields], ErrorCode](None[*Fields]()))
 	return rx
 }
