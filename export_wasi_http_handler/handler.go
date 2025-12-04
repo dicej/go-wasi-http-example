@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
-	"reflect"
 	"wit_component/wasi_http_handler"
 	. "wit_component/wasi_http_types"
 	. "wit_component/wit_types"
@@ -55,26 +54,16 @@ func Handle(request *Request) Result[*Response, ErrorCode] {
 		go func() {
 			defer tx.Drop()
 
-			cases := make([]reflect.SelectCase, 0, len(urls))
+			channel := make(chan Tuple2[string, string])
 			for _, url := range urls {
-				channel := make(chan Tuple2[string, string])
 				go func() {
 					channel <- Tuple2[string, string]{url, getSha256(url)}
 				}()
-				cases = append(cases, reflect.SelectCase{
-					reflect.SelectRecv,
-					reflect.ValueOf(channel),
-					reflect.Value{},
-				})
 			}
 
 			for i := 0; i < len(urls); i++ {
-				_, value, _ := reflect.Select(cases)
-				tx.WriteAll([]uint8(fmt.Sprintf(
-					"%v: %v\n",
-					value.Field(0).String(),
-					value.Field(1).String(),
-				)))
+				pair := (<-channel)
+				tx.WriteAll([]uint8(fmt.Sprintf("%v: %v\n", pair.F0, pair.F1)))
 			}
 		}()
 
