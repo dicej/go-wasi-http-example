@@ -3,3 +3,6 @@ go.mod
 wasi_*
 export_wasi_http_handler/wit_bindings.go
 wit_*
+bin
+.crates.toml
+.crates2.json

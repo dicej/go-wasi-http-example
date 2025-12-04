@@ -7,8 +7,8 @@ concurrency
 ABI](https://github.com/WebAssembly/component-model/blob/main/design/mvp/Concurrency.md).
 
 As of this writing, not everything has been upstreamed and released, so this
-relies on Git submodules pointed at specific commits.  Once everything is
-merged, we'll be able to switch to the upstream tools.
+relies on specific Git revisions of certain tools.  Once everything is merged,
+we'll be able to switch to the upstream releases.
 
 ### Building and Running
 
