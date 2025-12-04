@@ -59,7 +59,6 @@ func Handle(request *Request) Result[*Response, ErrorCode] {
 			for _, url := range urls {
 				channel := make(chan Tuple2[string, string])
 				go func() {
-
 					channel <- Tuple2[string, string]{url, getSha256(url)}
 				}()
 				cases = append(cases, reflect.SelectCase{
