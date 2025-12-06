@@ -19,7 +19,7 @@ go/bin/go:
 
 bin/wit-bindgen:
 	cargo install --locked --no-default-features --features go \
-		--git https://github.com/dicej/wit-bindgen --rev f426ea9a --root .
+		--git https://github.com/bytecodealliance/wit-bindgen --rev 4284ea88 --root .
 
 bin/wasmtime:
 	cargo install --locked --git https://github.com/bytecodealliance/wasmtime --rev 54826c0e --root . wasmtime-cli

@@ -165,7 +165,7 @@ func getSha256(urlString string) string {
 		buffer := make([]uint8, 16*1024)
 		hash := sha256.New()
 		for !rx.WriterDropped() {
-			count := rx.ReadInto(buffer)
+			count := rx.Read(buffer)
 			writeCount, err := hash.Write(buffer[:count])
 			if err != nil || uint32(writeCount) != count {
 				panic("unreachable")
